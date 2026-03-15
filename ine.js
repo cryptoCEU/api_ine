@@ -13,118 +13,192 @@
  *   nult=N     → últimos N periodos
  *   tip=AM     → modo amigable + metadatos
  *   det=2      → máximo detalle
- *   tv=VAR:VAL → filtro por variable (permite múltiples &tv=...)
+ *   tv=VAR:VAL → filtro por variable NUMÉRICA — formato: {FK_Variable}:{Codigo}
+ *                ⚠️  Los códigos tv= son NUMÉRICOS, NO alfanuméricos (CMUN, CPRO no funcionan)
+ *                    Verificar siempre con SERIES_TABLA/{id}?tip=M antes de usar en cada tabla
  *   date=AAAAMMDD:AAAAMMDD → rango de fechas
+ *
+ * LECCIONES APRENDIDAS inspeccionando las series reales:
+ *   - Tabla 9949 (ECV): nivel máximo CCAA. NO tiene municipios ni provincias.
+ *     Variable territorial: FK_Variable=70, códigos "01"-"19" (ver CCAA_CODIGOS)
+ *     Variable tipo renta:  FK_Variable=482, código "19"=neta, "20"=con alquiler imputado
+ *     Ejemplo correcto: tv=70:13&tv=482:19 → renta neta de Madrid CCAA
+ *   - Para renta a nivel municipal usar tabla 31097 (Atlas de Renta de los Hogares)
+ *   - Las tablas con "pendienteVerificar: true" necesitan SERIES_TABLA/{id}?tip=M
+ *     antes de usar filtros tv= para conocer sus FK_Variable exactos
  */
 
 const INE_BASE = "https://servicios.ine.es/wstempus/js/ES";
 
 // ─── TABLAS MAPEADAS ─────────────────────────────────────────────────────────
-// Cada tabla incluye: id, descripción, periodicidad, y variables de filtro útiles
 export const TABLAS = {
-  // 2.1.2 ─ Renta
-  renta_media_municipios: {
+
+  // 2.1.2 ─ Renta por CCAA (ECV)
+  // ✅ Variables verificadas con SERIES_TABLA/9949?tip=M
+  // ⚠️  Nivel máximo: CCAA. Sin desglose municipal ni provincial.
+  renta_ccaa: {
     id: "9949",
-    desc: "Renta neta media por persona — municipios",
-    periodicidad: "anual",
-    fuente: "INE · Encuesta de Condiciones de Vida",
-    // Variables útiles para filtrar: t=territorio, s=sexo
+    desc: "Renta neta media por hogar — por CCAA",
+    nivel: "ccaa",
+    fuente: "INE · Encuesta de Condiciones de Vida (ECV)",
+    vars: {
+      territorio: 70,   // FK_Variable=70 → "00"=España, "01"=Andalucía... (ver CCAA_CODIGOS)
+      tipoRenta: 482,   // FK_Variable=482 → "19"=renta neta, "20"=con alquiler imputado
+    },
     notas: "Usado para clasificación clase alta/media/baja según % de mediana nacional",
   },
 
-  // 2.2.1 ─ Evolución población
+  // 2.3.3 ─ Renta por municipio (Atlas de Renta)
+  // ⚠️  Variables pendientes de verificar con SERIES_TABLA/31097?tip=M
+  renta_municipios: {
+    id: "31097",
+    desc: "Renta media por hogar — municipios",
+    nivel: "municipio",
+    fuente: "INE · Atlas de Distribución de Renta de los Hogares",
+    vars: { pendienteVerificar: true },
+  },
+
+  // 2.2.1 ─ Evolución población (Padrón)
+  // ⚠️  Variables pendientes de verificar con SERIES_TABLA/2852?tip=M
   poblacion_municipios: {
     id: "2852",
-    desc: "Población total por municipios — Padrón Municipal",
-    periodicidad: "anual",
+    desc: "Población total — Padrón Municipal",
+    nivel: "municipio",
     fuente: "INE · Padrón Municipal de Habitantes",
+    vars: { pendienteVerificar: true },
   },
 
   // 2.2.2 ─ Dinámicas demográficas
-  variacion_residencial_municipios: {
+  // ⚠️  Variables pendientes de verificar
+  variacion_residencial: {
     id: "2881",
     desc: "Variaciones residenciales — cambio en población por municipio",
-    periodicidad: "anual",
+    nivel: "municipio",
     fuente: "INE · Estadística de Variaciones Residenciales",
+    vars: { pendienteVerificar: true },
   },
   poblacion_nacionalidad: {
     id: "36859",
     desc: "Población por municipio y nacionalidad",
-    periodicidad: "anual",
+    nivel: "municipio",
     fuente: "INE · Padrón",
+    vars: { pendienteVerificar: true },
   },
   inmigracion: {
     id: "69743",
-    desc: "Inmigración exterior por municipio",
-    periodicidad: "anual",
+    desc: "Inmigración exterior",
+    nivel: "provincia",
     fuente: "INE · Estadística de Migraciones",
+    vars: { pendienteVerificar: true },
   },
   emigracion: {
     id: "69746",
-    desc: "Emigración exterior por municipio",
-    periodicidad: "anual",
+    desc: "Emigración exterior",
+    nivel: "provincia",
     fuente: "INE · Estadística de Migraciones",
+    vars: { pendienteVerificar: true },
   },
 
   // 2.3.1 ─ Actividad económica
+  // ⚠️  Variables pendientes de verificar
   empresas_actividad: {
     id: "4721",
     desc: "Empresas por actividad principal (CNAE)",
-    periodicidad: "anual",
+    nivel: "provincia",
     fuente: "INE · DIRCE (Directorio Central de Empresas)",
+    vars: { pendienteVerificar: true },
   },
 
   // 2.3.2 ─ Mercado laboral
+  // ⚠️  Variables pendientes de verificar
   salario_medio: {
     id: "13930",
     desc: "Salario medio anual por provincia y sexo",
-    periodicidad: "anual",
+    nivel: "provincia",
     fuente: "INE · Encuesta de Estructura Salarial",
+    vars: { pendienteVerificar: true },
   },
 
-  // 2.3.3 ─ Renta y gasto
-  renta_media_hogar: {
-    id: "31097",
-    desc: "Renta media por hogar por municipio",
-    periodicidad: "anual",
-    fuente: "INE · Atlas de Distribución de Renta de los Hogares",
-  },
+  // 2.3.3 ─ Gasto
+  // ⚠️  Variables pendientes de verificar
   gasto_medio_hogar: {
     id: "10734",
     desc: "Gasto total medio por hogar",
-    periodicidad: "anual",
+    nivel: "nacional",
     fuente: "INE · Encuesta de Presupuestos Familiares",
+    vars: { pendienteVerificar: true },
   },
 };
 
-// ─── CÓDIGOS TERRITORIALES ────────────────────────────────────────────────────
-// Códigos INE para filtrar por territorio (tv=NAC:XX o tv=CPRO:XX)
-export const TERRITORIOS = {
-  espana: { cod: "00", nivel: "nacional", desc: "España total" },
+// ─── CÓDIGOS CCAA ─────────────────────────────────────────────────────────────
+// ✅ Verificados con SERIES_TABLA/9949?tip=M → FK_Variable=70
+// Uso: tv=70:{codCCAA}  → ej. tv=70:13 para Comunidad de Madrid
+export const CCAA_CODIGOS = {
+  espana:           "00",
+  andalucia:        "01",
+  aragon:           "02",
+  asturias:         "03",
+  baleares:         "04",
+  canarias:         "05",
+  cantabria:        "06",
+  castilla_leon:    "07",
+  castilla_mancha:  "08",
+  cataluna:         "09",
+  valencia:         "10",
+  extremadura:      "11",
+  galicia:          "12",
+  madrid:           "13",
+  murcia:           "14",
+  navarra:          "15",
+  pais_vasco:       "16",
+  rioja:            "17",
+  ceuta:            "18",
+  melilla:          "19",
+};
 
-  // Comunidades Autónomas (prefijo 09 en muchas tablas)
-  andalucia:      { cod: "01", nivel: "ccaa" },
-  aragon:         { cod: "02", nivel: "ccaa" },
-  asturias:       { cod: "03", nivel: "ccaa" },
-  baleares:       { cod: "04", nivel: "ccaa" },
-  canarias:       { cod: "05", nivel: "ccaa" },
-  cantabria:      { cod: "06", nivel: "ccaa" },
-  castilla_leon:  { cod: "07", nivel: "ccaa" },
-  castilla_mancha:{ cod: "08", nivel: "ccaa" },
-  cataluna:       { cod: "09", nivel: "ccaa" },
-  extremadura:    { cod: "11", nivel: "ccaa" },
-  galicia:        { cod: "12", nivel: "ccaa" },
-  madrid:         { cod: "13", nivel: "ccaa" },
-  murcia:         { cod: "14", nivel: "ccaa" },
-  navarra:        { cod: "15", nivel: "ccaa" },
-  pais_vasco:     { cod: "16", nivel: "ccaa" },
-  rioja:          { cod: "17", nivel: "ccaa" },
-  valencia:       { cod: "10", nivel: "ccaa" },
-  ceuta:          { cod: "18", nivel: "ccaa" },
-  melilla:        { cod: "19", nivel: "ccaa" },
-
-  // Provincias — código INE de 2 dígitos
-  // Consultar: https://www.ine.es/daco/daco42/codmun/cod_ccaa_provincia.htm
+// ─── CÓDIGOS PROVINCIA ────────────────────────────────────────────────────────
+// Código INE de 2 dígitos — pendiente confirmar FK_Variable por tabla
+// Referencia: https://www.ine.es/daco/daco42/codmun/cod_ccaa_provincia.htm
+export const PROVINCIA_CODIGOS = {
+  alicante:    "03",
+  almeria:     "04",
+  avila:       "05",
+  badajoz:     "06",
+  barcelona:   "08",
+  burgos:      "09",
+  caceres:     "10",
+  cadiz:       "11",
+  castellon:   "12",
+  ciudad_real: "13",
+  cordoba:     "14",
+  girona:      "17",
+  granada:     "18",
+  guadalajara: "19",
+  huelva:      "21",
+  huesca:      "22",
+  jaen:        "23",
+  leon:        "24",
+  lleida:      "25",
+  logrono:     "26",
+  lugo:        "27",
+  madrid:      "28",
+  malaga:      "29",
+  murcia:      "30",
+  navarra:     "31",
+  ourense:     "32",
+  palencia:    "34",
+  pontevedra:  "36",
+  salamanca:   "37",
+  segovia:     "40",
+  sevilla:     "41",
+  soria:       "42",
+  tarragona:   "43",
+  teruel:      "44",
+  toledo:      "45",
+  valencia:    "46",
+  valladolid:  "47",
+  zamora:      "49",
+  zaragoza:    "50",
 };
 
 // ─── CLIENTE BASE ─────────────────────────────────────────────────────────────
@@ -135,8 +209,7 @@ export const TERRITORIOS = {
 async function ineRequest(endpoint, params = {}) {
   const url = new URL(`${INE_BASE}/${endpoint}`);
 
-  // Parámetros por defecto
-  const defaults = { tip: "AM" }; // Amigable + metadatos
+  const defaults = { tip: "AM" };
   const allParams = { ...defaults, ...params };
 
   // tv puede ser array → múltiples &tv= en la query string
@@ -181,11 +254,11 @@ async function ineRequest(endpoint, params = {}) {
 
 /**
  * Obtiene los últimos N periodos de una tabla
- * @param {string} tablaKey  - clave en TABLAS (ej. "renta_media_municipios")
+ * @param {string} tablaKey           - clave en TABLAS (ej. "renta_ccaa")
  * @param {object} opciones
- * @param {number} opciones.nult        - últimos N periodos (default: 5)
- * @param {number} opciones.det         - nivel detalle 0|1|2 (default: 2)
- * @param {string|string[]} opciones.tv - filtros tv (ej. "CPRO:28" para Madrid)
+ * @param {number} opciones.nult      - últimos N periodos (default: 5)
+ * @param {number} opciones.det       - nivel detalle 0|1|2 (default: 2)
+ * @param {string|string[]} opciones.tv - filtros tv numéricos (ej. ["70:13","482:19"])
  */
 export async function getDatosTabla(tablaKey, opciones = {}) {
   const tabla = TABLAS[tablaKey];
@@ -196,7 +269,9 @@ export async function getDatosTabla(tablaKey, opciones = {}) {
 }
 
 /**
- * Obtiene los metadatos/series de una tabla (útil para descubrir los códigos tv)
+ * Obtiene los metadatos/series de una tabla
+ * Úsalo para descubrir los FK_Variable y Codigo exactos antes de filtrar con tv=
+ * Ejemplo: getSeriesTabla("renta_ccaa") → revela que territorial es FK_Variable=70
  */
 export async function getSeriesTabla(tablaKey) {
   const tabla = TABLAS[tablaKey];
@@ -206,8 +281,17 @@ export async function getSeriesTabla(tablaKey) {
 }
 
 /**
- * Obtiene datos de una serie específica por su código
- * @param {string} codigoSerie - ej. "ECV28459"
+ * Inspecciona una tabla por su ID directamente (sin necesidad de que esté en TABLAS)
+ * Útil para explorar tablas nuevas antes de añadirlas al mapa
+ * @param {string} tablaId - ej. "31097"
+ */
+export async function inspeccionarTabla(tablaId) {
+  return ineRequest(`SERIES_TABLA/${tablaId}`, { tip: "M" });
+}
+
+/**
+ * Obtiene datos de una serie específica por su código Tempus3
+ * @param {string} codigoSerie - ej. "ECV4249"
  */
 export async function getDatosSerie(codigoSerie, opciones = {}) {
   const { nult = 5, date } = opciones;
@@ -218,7 +302,7 @@ export async function getDatosSerie(codigoSerie, opciones = {}) {
 
 /**
  * Extrae el valor más reciente de un resultado de DATOS_TABLA
- * Devuelve array de { nombre, valor, fecha, unidad }
+ * Devuelve array de { nombre, valor, fecha, unidad, cod }
  */
 export function extraerUltimosValores(datosRaw) {
   if (!Array.isArray(datosRaw)) return [];
@@ -230,9 +314,7 @@ export function extraerUltimosValores(datosRaw) {
       return {
         nombre: serie.Nombre || serie.COD,
         valor: ultimo.Valor,
-        fecha: ultimo.Anyo
-          ? `${ultimo.Anyo}`
-          : ultimo.T3_Periodo || "—",
+        fecha: ultimo.Anyo ? `${ultimo.Anyo}` : ultimo.T3_Periodo || "—",
         unidad: serie.Unidad?.Nombre || "",
         cod: serie.COD,
       };
@@ -242,18 +324,15 @@ export function extraerUltimosValores(datosRaw) {
 
 /**
  * Clasifica renta según % de la mediana nacional
- * Criterio del informe: 75%-200% = clase media
+ * Criterio del informe: <75% = baja, 75%-200% = media, >200% = alta
  *
- * @param {number} renta          - renta anual bruta del territorio
- * @param {number} medianaNacional - mediana nacional (actualizar cada año)
- * @returns {{ clase, ratio, descripcion }}
+ * @param {number} renta           - renta anual del territorio (€/hogar o €/persona)
+ * @param {number} medianaNacional - mediana nacional en la misma unidad
  */
 export function clasificarClaseSocial(renta, medianaNacional) {
-  // Mediana nacional de renta bruta por persona — actualizar con datos INE anuales
-  // Último dato disponible (2022): ~14.500 €/año (aprox.)
   const ratio = renta / medianaNacional;
-
   let clase, descripcion;
+
   if (ratio < 0.75) {
     clase = "baja";
     descripcion = `Renta inferior al 75% de la mediana nacional (${(ratio * 100).toFixed(1)}%)`;
@@ -270,10 +349,6 @@ export function clasificarClaseSocial(renta, medianaNacional) {
 
 /**
  * Calcula CAGR (tasa de crecimiento anual compuesto)
- * @param {number} valorInicial
- * @param {number} valorFinal
- * @param {number} años
- * @returns {string} porcentaje con 2 decimales
  */
 export function calcularCAGR(valorInicial, valorFinal, años) {
   if (!valorInicial || años <= 0) return null;
@@ -283,12 +358,11 @@ export function calcularCAGR(valorInicial, valorFinal, años) {
 
 /**
  * Calcula la máxima cuota hipotecaria asumible y precio de vivienda
- * según criterio del informe (30% renta anual, a 30 años, Euribor ±5%)
+ * Criterio del informe: 30% renta anual mensualizado, a 30 años, Euribor ± 0.5%
  *
- * @param {number} rentaAnualHogar    - en euros
- * @param {number} euribor1a          - tipo Euribor a 1 año (ej. 0.035 para 3.5%)
- * @param {number} spreadBanco        - diferencial habitual (ej. 0.01 para 1%)
- * @returns {{ cuotaMaxMensual, precioAsumibleBase, precioAsumibleMinus5, precioAsumiblePlus5 }}
+ * @param {number} rentaAnualHogar - en euros
+ * @param {number} euribor1a       - tipo Euribor a 1 año en decimal (ej. 0.035 para 3.5%)
+ * @param {number} spreadBanco     - diferencial en decimal (default: 0.01 = 1%)
  */
 export function calcularCapacidadHipotecaria(rentaAnualHogar, euribor1a, spreadBanco = 0.01) {
   const cuotaMaxMensual = (rentaAnualHogar * 0.30) / 12;
@@ -296,7 +370,6 @@ export function calcularCapacidadHipotecaria(rentaAnualHogar, euribor1a, spreadB
   const calcularPrecio = (tipo) => {
     const tipoMensual = tipo / 12;
     const n = 30 * 12; // 360 cuotas
-    // Fórmula inversa de cuota: P = C × [(1-(1+r)^-n) / r]
     const precio = cuotaMaxMensual * ((1 - Math.pow(1 + tipoMensual, -n)) / tipoMensual);
     return Math.round(precio);
   };
@@ -304,11 +377,11 @@ export function calcularCapacidadHipotecaria(rentaAnualHogar, euribor1a, spreadB
   const tipoBase = euribor1a + spreadBanco;
 
   return {
-    cuotaMaxMensual: Math.round(cuotaMaxMensual),
-    tipoBase: (tipoBase * 100).toFixed(2) + "%",
-    precioAsumibleBase:   calcularPrecio(tipoBase),
-    precioAsumibleMinus5: calcularPrecio(Math.max(tipoBase - 0.005, 0.001)), // -0.5%
-    precioAsumiblePlus5:  calcularPrecio(tipoBase + 0.005), // +0.5%
+    cuotaMaxMensual:       Math.round(cuotaMaxMensual),
+    tipoBase:              (tipoBase * 100).toFixed(2) + "%",
+    precioAsumibleBase:    calcularPrecio(tipoBase),
+    precioAsumibleMinus05: calcularPrecio(Math.max(tipoBase - 0.005, 0.001)),
+    precioAsumiblePlus05:  calcularPrecio(tipoBase + 0.005),
   };
 }
 
@@ -318,21 +391,21 @@ export function calcularCapacidadHipotecaria(rentaAnualHogar, euribor1a, spreadB
  * Obtiene todos los datos de la sección 2 para un territorio dado
  *
  * @param {object} territorio
- * @param {string} territorio.municipioCod   - código INE del municipio (5 dígitos, ej. "28079")
- * @param {string} territorio.provinciaCod   - código INE provincia (2 dígitos, ej. "28")
- * @param {string} territorio.nombre         - nombre legible (ej. "Madrid")
- * @param {number} [periodos=10]             - años de histórico para evolución
- *
- * @returns {Promise<object>} todos los datos estructurados por subsección
+ * @param {string} territorio.municipioCod - código INE municipio (5 dígitos, ej. "03082")
+ * @param {string} territorio.provinciaCod - código INE provincia (2 dígitos, ej. "03")
+ * @param {string} territorio.ccaaCod      - código CCAA según CCAA_CODIGOS (ej. "10" para Valencia)
+ * @param {string} territorio.nombre       - nombre legible (ej. "La Nucía")
+ * @param {number} [periodos=10]           - años de histórico para evolución población
  */
 export async function fetchSeccion2(territorio, periodos = 10) {
-  const { municipioCod, provinciaCod, nombre } = territorio;
+  const { municipioCod, provinciaCod, ccaaCod, nombre } = territorio;
 
-  console.log(`[INE] Fetching sección 2 para: ${nombre} (municipio: ${municipioCod}, provincia: ${provinciaCod})`);
+  console.log(`[INE] Fetching sección 2 para: ${nombre}`);
+  console.log(`[INE] municipio=${municipioCod} | provincia=${provinciaCod} | ccaa=${ccaaCod}`);
 
-  // Lanzar todas las peticiones en paralelo para maximizar velocidad
   const [
-    rentaMedia,
+    rentaCCAA,
+    rentaMunicipio,
     poblacionMunicipio,
     variacionResidencial,
     nacionalidad,
@@ -340,52 +413,67 @@ export async function fetchSeccion2(territorio, periodos = 10) {
     emigracion,
     empresasActividad,
     salarioMedio,
-    rentaHogar,
     gastoHogar,
   ] = await Promise.allSettled([
-    // 2.1.2 Renta media — filtro por municipio si está disponible
-    getDatosTabla("renta_media_municipios", { nult: 3, tv: municipioCod ? `CMUN:${municipioCod}` : undefined }),
 
-    // 2.2.1 Evolución población — últimos N años
-    getDatosTabla("poblacion_municipios", { nult: periodos, tv: municipioCod ? `CMUN:${municipioCod}` : undefined }),
+    // 2.1.2 Renta media por hogar — nivel CCAA
+    // ✅ Filtros verificados: tv=70:{ccaaCod} + tv=482:19 (renta neta sin alquiler imputado)
+    getDatosTabla("renta_ccaa", {
+      nult: 5,
+      tv: ccaaCod
+        ? [`70:${ccaaCod}`, "482:19"]
+        : ["70:00", "482:19"], // fallback: nacional
+    }),
+
+    // 2.3.3 Renta media por hogar — nivel municipio (Atlas de Renta)
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/31097?tip=M
+    //     Se lanza sin filtro para inspeccionar la estructura de respuesta
+    getDatosTabla("renta_municipios", { nult: 3 }),
+
+    // 2.2.1 Evolución población — municipio
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/2852?tip=M
+    getDatosTabla("poblacion_municipios", { nult: periodos }),
 
     // 2.2.2 Variación residencial
-    getDatosTabla("variacion_residencial_municipios", { nult: 5, tv: municipioCod ? `CMUN:${municipioCod}` : undefined }),
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/2881?tip=M
+    getDatosTabla("variacion_residencial", { nult: 5 }),
 
     // 2.2.2 Nacionalidad
-    getDatosTabla("poblacion_nacionalidad", { nult: 3, tv: municipioCod ? `CMUN:${municipioCod}` : undefined }),
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/36859?tip=M
+    getDatosTabla("poblacion_nacionalidad", { nult: 3 }),
 
     // 2.2.2 Inmigración
-    getDatosTabla("inmigracion", { nult: 5, tv: provinciaCod ? `CPRO:${provinciaCod}` : undefined }),
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/69743?tip=M
+    getDatosTabla("inmigracion", { nult: 5 }),
 
     // 2.2.2 Emigración
-    getDatosTabla("emigracion", { nult: 5, tv: provinciaCod ? `CPRO:${provinciaCod}` : undefined }),
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/69746?tip=M
+    getDatosTabla("emigracion", { nult: 5 }),
 
-    // 2.3.1 Empresas por actividad — nivel provincial
-    getDatosTabla("empresas_actividad", { nult: 3, tv: provinciaCod ? `CPRO:${provinciaCod}` : undefined }),
+    // 2.3.1 Empresas por actividad
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/4721?tip=M
+    getDatosTabla("empresas_actividad", { nult: 3 }),
 
-    // 2.3.2 Salario medio — nivel provincial
-    getDatosTabla("salario_medio", { nult: 3, tv: provinciaCod ? `CPRO:${provinciaCod}` : undefined }),
+    // 2.3.2 Salario medio
+    // ⚠️  Filtros tv= pendientes de verificar con SERIES_TABLA/13930?tip=M
+    getDatosTabla("salario_medio", { nult: 3 }),
 
-    // 2.3.3 Renta por hogar — municipio
-    getDatosTabla("renta_media_hogar", { nult: 3, tv: municipioCod ? `CMUN:${municipioCod}` : undefined }),
-
-    // 2.3.3 Gasto por hogar — nacional (esta tabla no tiene desglose municipal)
+    // 2.3.3 Gasto medio por hogar (solo nivel nacional)
     getDatosTabla("gasto_medio_hogar", { nult: 3 }),
   ]);
 
-  // Normalizar resultados de Promise.allSettled
-  const normalizar = (result, nombre) => {
+  const normalizar = (result, etiqueta) => {
     if (result.status === "fulfilled") return result.value;
-    console.warn(`[INE] Error en ${nombre}:`, result.reason);
+    console.warn(`[INE] Error en ${etiqueta}:`, result.reason);
     return { ok: false, error: result.reason?.message || "Error desconocido" };
   };
 
   return {
-    territorio: { municipioCod, provinciaCod, nombre },
+    territorio: { municipioCod, provinciaCod, ccaaCod, nombre },
     timestamp: new Date().toISOString(),
     secciones: {
-      "2.1.2_renta_media":           normalizar(rentaMedia,           "renta_media"),
+      "2.1.2_renta_ccaa":            normalizar(rentaCCAA,            "renta_ccaa"),
+      "2.3.3_renta_municipio":       normalizar(rentaMunicipio,       "renta_municipio"),
       "2.2.1_evolucion_poblacion":   normalizar(poblacionMunicipio,   "poblacion_municipio"),
       "2.2.2_variacion_residencial": normalizar(variacionResidencial, "variacion_residencial"),
       "2.2.2_nacionalidad":          normalizar(nacionalidad,         "nacionalidad"),
@@ -393,7 +481,6 @@ export async function fetchSeccion2(territorio, periodos = 10) {
       "2.2.2_emigracion":            normalizar(emigracion,           "emigracion"),
       "2.3.1_empresas_actividad":    normalizar(empresasActividad,    "empresas_actividad"),
       "2.3.2_salario_medio":         normalizar(salarioMedio,         "salario_medio"),
-      "2.3.3_renta_hogar":           normalizar(rentaHogar,           "renta_hogar"),
       "2.3.3_gasto_hogar":           normalizar(gastoHogar,           "gasto_hogar"),
     },
   };
