@@ -162,6 +162,12 @@ function construirContextoINE(datosINE, claseSocial, cagrPoblacion, capacidadHip
 }
 
 async function sintetizarConClaude(municipio, contextoINE) {
+  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY no está definida en las variables de entorno");
+  }
+
   const SUBSECCIONES = [
     {
       id: "2.1.1",
@@ -205,16 +211,21 @@ async function sintetizarConClaude(municipio, contextoINE) {
     },
   ];
 
-  const resultados = [];
-
-  for (const subseccion of SUBSECCIONES) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: `Eres un analista inmobiliario senior especializado en el mercado español.
+  // ── Llamadas en paralelo para reducir tiempo de ~20s a ~4s ──────────────
+  const resultados = await Promise.all(
+    SUBSECCIONES.map(async (subseccion) => {
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            system: `Eres un analista inmobiliario senior especializado en el mercado español.
 
 REGLAS:
 - Redacta SOLO con los datos proporcionados. No inventes cifras.
@@ -223,9 +234,9 @@ REGLAS:
 - Formato: Markdown limpio. Máximo 300 palabras por subsección.
 - Tono: profesional, analítico, directo.
 - Usa formato español para números (puntos como miles, comas para decimales).`,
-        messages: [{
-          role: "user",
-          content: `Municipio analizado: **${municipio}**
+            messages: [{
+              role: "user",
+              content: `Municipio analizado: **${municipio}**
 
 ${contextoINE}
 
@@ -233,18 +244,39 @@ ${contextoINE}
 Redacta la subsección **${subseccion.id} ${subseccion.titulo}**
 
 Instrucción: ${subseccion.instruccion}`,
-        }],
-      }),
-    });
+            }],
+          }),
+        });
 
-    const data = await res.json();
-    const texto = data.content
-      ?.filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n") || "[Error generando sección]";
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.error(`[Claude API error ${res.status}] subsección ${subseccion.id}:`, errBody);
+          return {
+            id: subseccion.id,
+            titulo: subseccion.titulo,
+            contenido: `[Error ${res.status} generando sección — revisa logs]`,
+          };
+        }
 
-    resultados.push({ id: subseccion.id, titulo: subseccion.titulo, contenido: texto });
-  }
+        const data = await res.json();
+        const texto =
+          data.content
+            ?.filter((b) => b.type === "text")
+            .map((b) => b.text)
+            .join("\n") || "[Error generando sección]";
+
+        return { id: subseccion.id, titulo: subseccion.titulo, contenido: texto };
+
+      } catch (err) {
+        console.error(`[sintetizarConClaude] Error subsección ${subseccion.id}:`, err.message);
+        return {
+          id: subseccion.id,
+          titulo: subseccion.titulo,
+          contenido: `[Error interno: ${err.message}]`,
+        };
+      }
+    })
+  );
 
   return resultados;
 }
