@@ -4,9 +4,45 @@ export const INE_BASE = 'https://servicios.ine.es/wstempus/js/ES'
 export async function ineGet(path, params = {}) {
   const url = new URL(`${INE_BASE}/${path}`)
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)))
-  const r = await fetch(url.toString())
-  if (!r.ok) throw new Error(`INE HTTP ${r.status}`)
-  return r.json()
+  const fullUrl = url.toString()
+
+  console.group(`[INE] GET ${path}`)
+  console.log('URL:', fullUrl)
+
+  let r
+  try {
+    r = await fetch(fullUrl)
+  } catch (e) {
+    console.error('[INE] fetch() excepción de red:', e.message)
+    console.groupEnd()
+    throw e
+  }
+
+  console.log(`[INE] HTTP ${r.status} ${r.statusText}`)
+
+  if (!r.ok) {
+    const body = await r.text().catch(() => '')
+    console.error('[INE] Error body:', body.slice(0, 300))
+    console.groupEnd()
+    throw new Error(`INE HTTP ${r.status}: ${r.statusText}`)
+  }
+
+  let json
+  try {
+    json = await r.json()
+  } catch (e) {
+    console.error('[INE] JSON parse falló:', e.message)
+    console.groupEnd()
+    throw e
+  }
+
+  if (Array.isArray(json)) {
+    console.log(`[INE] Array de ${json.length} items. Muestra:`, json.slice(0, 2))
+  } else {
+    console.log('[INE] Respuesta:', JSON.stringify(json).slice(0, 300))
+  }
+  console.groupEnd()
+  return json
 }
 
 // ─── Geography ───────────────────────────────────────────────────────────────
